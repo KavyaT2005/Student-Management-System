@@ -1,154 +1,186 @@
--- Database: students
-CREATE DATABASE IF NOT EXISTS students;
-USE students;
+import datetime
+import sqlite3
+import ctypes
+from tkinter import *
+from tkinter import ttk
+import tkinter.messagebox as mb
+from tkcalendar import DateEntry
 
--- Drop if existing (for clean start)
-DROP TABLE IF EXISTS attendence, department, student, test, trig, user;
+# ---------------- SYSTEM CONFIG ---------------- #
+user32 = ctypes.windll.user32
+xpos = int((user32.GetSystemMetrics(0) - 1080) / 2)
+ypos = int((user32.GetSystemMetrics(1) - 600) / 2)
 
--- Table: attendence
-CREATE TABLE attendence (
-  aid int(11) NOT NULL AUTO_INCREMENT,
-  rollno varchar(20) NOT NULL,
-  attendance int(100) NOT NULL,
-  PRIMARY KEY (aid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+headlabelfont = ("Arial", 15, "bold")
+labelfont = ("Calibri", 14)
+entryfont = ("Calibri", 12)
 
-INSERT INTO attendence (aid, rollno, attendance) VALUES
-(6, '1ve17cs012', 98);
+# ---------------- DATABASE ---------------- #
+connector = sqlite3.connect("school.db")
+cursor = connector.cursor()
 
--- Table: department
-CREATE TABLE department (
-  cid int(11) NOT NULL AUTO_INCREMENT,
-  branch varchar(50) NOT NULL,
-  PRIMARY KEY (cid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-INSERT INTO department (cid, branch) VALUES
-(2, 'Information Science'),
-(3, 'Electronic and Communication'),
-(4, 'Electrical & Electronic'),
-(5, 'Civil '),
-(7, 'computer science'),
-(8, 'IOT');
-
--- Table: student
-CREATE TABLE student (
-  id int(11) NOT NULL AUTO_INCREMENT,
-  rollno varchar(20) NOT NULL,
-  sname varchar(50) NOT NULL,
-  sem int(20) NOT NULL,
-  gender varchar(50) NOT NULL,
-  branch varchar(50) NOT NULL,
-  email varchar(50) NOT NULL,
-  number varchar(12) NOT NULL,
-  address text NOT NULL,
-  PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Table: trig (for logs)
-CREATE TABLE trig (
-  tid int(11) NOT NULL AUTO_INCREMENT,
-  rollno varchar(50) NOT NULL,
-  action varchar(50) NOT NULL,
-  timestamp datetime NOT NULL,
-  PRIMARY KEY (tid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Triggers
-DELIMITER $$
-
-CREATE TRIGGER Insert AFTER INSERT ON student
-FOR EACH ROW
-BEGIN
-  INSERT INTO trig VALUES (NULL, NEW.rollno, 'STUDENT INSERTED', NOW());
-END$$
-
-CREATE TRIGGER UPDATE AFTER UPDATE ON student
-FOR EACH ROW
-BEGIN
-  INSERT INTO trig VALUES (NULL, NEW.rollno, 'STUDENT UPDATED', NOW());
-END$$
-
-CREATE TRIGGER DELETE BEFORE DELETE ON student
-FOR EACH ROW
-BEGIN
-  INSERT INTO trig VALUES (NULL, OLD.rollno, 'STUDENT DELETED', NOW());
-END$$
-
-DELIMITER ;
-
--- Table: test
-CREATE TABLE test (
-  id int(11) NOT NULL AUTO_INCREMENT,
-  name varchar(52) NOT NULL,
-  email varchar(50) NOT NULL,
-  PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-INSERT INTO test (id, name, email) VALUES
-(1, 'aaa', 'aaa@gmail.com');
-
--- Table: user
-CREATE TABLE user (
-  id int(11) NOT NULL AUTO_INCREMENT,
-  username varchar(50) NOT NULL,
-  email varchar(50) NOT NULL,
-  password varchar(500) NOT NULL,
-  PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-INSERT INTO user (id, username, email, password) VALUES
-(4, 'anees', 'anees@gmail.com', 'pbkdf2:sha256:150000$1CSLss89$ef995dfc48121768b2070bfbe7a568871cd56fac85ac7c95a1e645c8806146e9');
-
--- Stored Procedures
-DELIMITER $$
-
--- Insert new student
-CREATE PROCEDURE InsertStudent(
-    IN p_rollno VARCHAR(20),
-    IN p_sname VARCHAR(50),
-    IN p_sem INT,
-    IN p_gender VARCHAR(50),
-    IN p_branch VARCHAR(50),
-    IN p_email VARCHAR(50),
-    IN p_number VARCHAR(12),
-    IN p_address TEXT
+connector.execute("""
+CREATE TABLE IF NOT EXISTS MANAGEMENT(
+    STUDENT_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    NAME TEXT,
+    PHONE_NO TEXT,
+    GENDER TEXT,
+    DOB TEXT,
+    DEPARTMENT TEXT,
+    TOTALFEES TEXT
 )
-BEGIN
-    INSERT INTO student (rollno, sname, sem, gender, branch, email, number, address)
-    VALUES (p_rollno, p_sname, p_sem, p_gender, p_branch, p_email, p_number, p_address);
-END$$
+""")
 
--- Get attendance by roll number
-CREATE PROCEDURE GetAttendance(
-    IN p_rollno VARCHAR(20)
+connector.execute("""
+CREATE TABLE IF NOT EXISTS FEES(
+    BILL_NO INTEGER PRIMARY KEY AUTOINCREMENT,
+    STUDENT_ID INTEGER,
+    BILL_DATE TEXT,
+    AMOUNT TEXT
 )
-BEGIN
-    SELECT * FROM attendence WHERE rollno = p_rollno;
-END$$
+""")
 
--- Delete a student by rollno (triggers deletion log)
-CREATE PROCEDURE DeleteStudent(
-    IN p_rollno VARCHAR(20)
-)
-BEGIN
-    DELETE FROM student WHERE rollno = p_rollno;
-END$$
+# ---------------- GLOBAL VARIABLES ---------------- #
+rows = []
+currentwindow = ""
 
--- Get all students of a specific branch
-CREATE PROCEDURE GetStudentsByBranch(
-    IN p_branch VARCHAR(50)
-)
-BEGIN
-    SELECT * FROM student WHERE branch = p_branch;
-END$$
+# ---------------- UTILITY FUNCTIONS ---------------- #
+def reset_fields():
+    name_strvar.set("")
+    contact_strvar.set("")
+    gender_strvar.set("")
+    department_strvar.set("")
+    total.set("")
+    dob.set_date(datetime.datetime.now().date())
 
-DELIMITER ;
 
--- Example procedure usage
--- (Uncomment these to test in your DBMS)
+def display_records():
+    tree.delete(*tree.get_children())
+    data = connector.execute("SELECT * FROM MANAGEMENT").fetchall()
+    for record in data:
+        tree.insert("", END, values=record)
 
--- CALL InsertStudent('1ve17cs999', 'Ravi', 6, 'Male', 'computer science', 'ravi@example.com', '9999999999', '123 Main St');
--- CALL GetAttendance('1ve17cs012');
--- CALL DeleteStudent('1ve17cs999');
--- CALL GetStudentsByBranch('computer science');
+
+# ---------------- STUDENT FUNCTIONS ---------------- #
+def add_record():
+    name = name_strvar.get()
+    contact = contact_strvar.get()
+    gender = gender_strvar.get()
+    dobv = dob.get_date()
+    dept = department_strvar.get()
+    fees = total.get()
+
+    if not all([name, contact, gender, dobv, dept, fees]):
+        mb.showerror("Error", "Please fill all fields")
+        return
+
+    connector.execute(
+        "INSERT INTO MANAGEMENT (NAME, PHONE_NO, GENDER, DOB, DEPARTMENT, TOTALFEES) VALUES (?,?,?,?,?,?)",
+        (name, contact, gender, dobv, dept, fees),
+    )
+    connector.commit()
+
+    mb.showinfo("Success", "Student record added")
+    reset_fields()
+    display_records()
+
+
+def remove_record():
+    if not tree.selection():
+        mb.showerror("Error", "Select a record")
+        return
+
+    item = tree.item(tree.focus())["values"]
+    connector.execute("DELETE FROM MANAGEMENT WHERE STUDENT_ID=?", (item[0],))
+    connector.commit()
+
+    display_records()
+
+
+def view_record():
+    if not tree.selection():
+        mb.showinfo("Info", "Select a student")
+        return
+
+    item = tree.item(tree.focus())["values"]
+
+    name_strvar.set(item[1])
+    contact_strvar.set(item[2])
+    gender_strvar.set(item[3])
+    dob.set_date(item[4])
+    department_strvar.set(item[5])
+    total.set(item[6])
+
+
+# ---------------- MAIN WINDOW ---------------- #
+def mainwindow():
+    global main, tree, name_strvar, contact_strvar
+    global gender_strvar, department_strvar, total, dob
+
+    main = Tk()
+    main.title("Student Management System")
+    main.geometry(f"1080x600+{xpos}+{ypos}")
+    main.resizable(False, False)
+
+    name_strvar = StringVar()
+    contact_strvar = StringVar()
+    gender_strvar = StringVar()
+    department_strvar = StringVar()
+    total = StringVar()
+
+    Label(main, text="STUDENT MANAGEMENT SYSTEM",
+          font=headlabelfont, bg="SpringGreen").pack(fill=X)
+
+    # -------- LEFT FRAME -------- #
+    left = Frame(main, bg="MediumSpringGreen")
+    left.place(x=0, y=40, relwidth=0.25, relheight=1)
+
+    Label(left, text="Name").pack()
+    Entry(left, textvariable=name_strvar).pack()
+
+    Label(left, text="Mobile").pack()
+    Entry(left, textvariable=contact_strvar).pack()
+
+    Label(left, text="Gender").pack()
+    OptionMenu(left, gender_strvar, "Male", "Female").pack()
+
+    Label(left, text="DOB").pack()
+    dob = DateEntry(left)
+    dob.pack()
+
+    Label(left, text="Department").pack()
+    Entry(left, textvariable=department_strvar).pack()
+
+    Label(left, text="Total Fees").pack()
+    Entry(left, textvariable=total).pack()
+
+    # -------- CENTER FRAME -------- #
+    center = Frame(main)
+    center.place(relx=0.25, y=40, relwidth=0.2)
+
+    Button(center, text="Add", command=add_record).pack(pady=5)
+    Button(center, text="Delete", command=remove_record).pack(pady=5)
+    Button(center, text="View", command=view_record).pack(pady=5)
+    Button(center, text="Reset", command=reset_fields).pack(pady=5)
+
+    # -------- RIGHT FRAME -------- #
+    right = Frame(main)
+    right.place(relx=0.45, y=40, relwidth=0.55, relheight=1)
+
+    tree = ttk.Treeview(
+        right,
+        columns=("ID", "Name", "Phone", "Gender", "DOB", "Dept", "Fees"),
+        show="headings",
+    )
+
+    for col in tree["columns"]:
+        tree.heading(col, text=col)
+
+    tree.pack(fill=BOTH, expand=True)
+    display_records()
+
+    main.mainloop()
+
+
+# ---------------- START APP ---------------- #
+mainwindow()
